@@ -12,7 +12,7 @@
   | obtain it through the world-wide-web, please send a note to          |
   | license@php.net so we can mail you a copy immediately.               |
   +----------------------------------------------------------------------+
-  | Author:                                                              |
+  | Author: leandre.china@gmail.com                                      |
   +----------------------------------------------------------------------+
 */
 
@@ -38,20 +38,38 @@ extern zend_module_entry eventlog_module_entry;
 #include "TSRM.h"
 #endif
 
-/*
-  	Declare any global variables you may need between the BEGIN
-	and END macros here:
+#define EVENTLOG_CLASS_NAME       "Eventlog"
+#define EVENTLOG_VERSION        "0.1"
+#define EVENTLOG_AUTHOE         "leandre.china@gmail.com"
 
-ZEND_BEGIN_MODULE_GLOBALS(eventlog)
-	zend_long  global_value;
-	char *global_string;
-ZEND_END_MODULE_GLOBALS(eventlog)
-*/
+#define EVENTLOG_GETPV          "getpv"
+#define EVENTLOG_GETUV          "getuv"
+#define EVENTLOG_ANALYZE_COUNT  "analyze_count"
+#define EVENTLOG_ANALYZE_DETAIL "analyze_detail"
 
-/* Always refer to the globals in your function as EVENTLOG_G(variable).
-   You are encouraged to rename these macros something shorter, see
-   examples in any other php module directory.
-*/
+PHP_MINIT_FUNCTION(eventlog);
+PHP_RINIT_FUNTION(eventlog);
+PHP_RSHUTDOWN_FUNCTION(eventlog);
+PHP_MSHUTDOWN_FUNCTION(eventlog);
+
+PHP_FUNCTION(eventlog_get_version);
+PHP_FUNCTION(eventlog_get_author);
+
+zend_class_entry *eventlog_ce;
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, __construct);
+PHP_METHOD(EVENTLOG_CLASS_NAME, __destruct);
+PHP_METHOD(EVENTLOG_CLASS_NAME, setpath);
+PHP_METHOD(EVENTLOG_CLASS_NAME, getpath);
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV);
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV);
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT);
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL);
+
+ZEND_BEGIN_MODULE_GLOABLES(eventlog)
+    char * default_path;
+    char * path;
+ZEND_END_MODULE_GLOABLES(eventlog)
 
 #ifdef ZTS
 #define EVENTLOG_G(v) ZEND_TSRMG(eventlog_globals_id, zend_eventlog_globals *, v)
