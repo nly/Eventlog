@@ -1,0 +1,13 @@
+// $Id$
+// vim:ft=javascript
+
+// If your extension references something external, use ARG_WITH
+// ARG_WITH("eventlog", "for eventlog support", "no");
+
+// Otherwise, use ARG_ENABLE
+// ARG_ENABLE("eventlog", "enable eventlog support", "no");
+
+if (PHP_EVENTLOG != "no") {
+	EXTENSION("eventlog", "eventlog.c", PHP_EXTNAME_SHARED, "/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1");
+}
+
