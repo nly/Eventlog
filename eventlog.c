@@ -25,72 +25,98 @@
 #include "php.h"
 #include "php_ini.h"
 #include "ext/standard/info.h"
-#include "php_eventlog.h"
+#include "ext/standard/php_string.h"
 
-/* If you declare any globals in php_eventlog.h uncomment this:
+#include "php_eventlog.h"
+#include "ext/date/php_date.h"
+#include "zend_extensions.h"
+#include <stdlib.h>
+
 ZEND_DECLARE_MODULE_GLOBALS(eventlog)
-*/
 
 /* True global resources - no need for thread safety here */
 static int le_eventlog;
 
+/* {{{ eventlog_functions[]
+ *
+ * Every user visible function must have an entry in eventlog_functions[].
+ */
+const zend_function_entry eventlog_functions[] = {
+    PHP_FE(eventlog_get_version, NULL)
+    PHP_FE(eventlog_get_author, NULL)
+
+    PHP_FE_END  /* Must be the last line in eventlog_functions[] */
+};
+/* }}} */
+
+// event_methods[]
+const zend_function_entry eventlog_methods[] = {
+    PHP_ME(EVENTLOG_CLASS_NAME, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, __destruct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+
+    PHP_ME(EVENTLOG_CLASS_NAME, setpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, getpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+
+    PHP_FE_END
+};
+
+/* {{{ eventlog_module_entry
+ */
+zend_module_entry eventlog_module_entry = {
+    STANDARD_MODULE_HEADER,
+    EVENTLOG_CLASS_NAME,
+    eventlog_functions,
+    PHP_MINIT(eventlog),
+    PHP_MSHUTDOWN(eventlog),
+    PHP_RINIT(eventlog),        /* Replace with NULL if there's nothing to do at request start */
+    PHP_RSHUTDOWN(eventlog),    /* Replace with NULL if there's nothing to do at request end */
+    PHP_MINFO(eventlog),
+    PHP_EVENTLOG_VERSION,
+    STANDARD_MODULE_PROPERTIES
+};
+/* }}} */
+
+#ifdef COMPILE_DL_EVENTLOG
+#ifdef ZTS
+ZEND_TSRMLS_CACHE_DEFINE();
+#endif
+ZEND_GET_MODULE(eventlog)
+#endif
+
 /* {{{ PHP_INI
  */
-/* Remove comments and fill if you need to have entries in php.ini
+/**
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("eventlog.global_value",      "42", PHP_INI_ALL, OnUpdateLong, global_value, zend_eventlog_globals, eventlog_globals)
-    STD_PHP_INI_ENTRY("eventlog.global_string", "foobar", PHP_INI_ALL, OnUpdateString, global_string, zend_eventlog_globals, eventlog_globals)
+    STD_PHP_INI_ENTRY("eventlog.default_path", "", PHP_INI_ALL, OnUpdateString, default_path, zend_eventlog_globals, eventlog_globals)
 PHP_INI_END()
 */
 /* }}} */
 
-/* Remove the following function when you have successfully modified config.m4
-   so that your module can be compiled into PHP, it exists only for testing
-   purposes. */
-
-/* Every user-visible function in PHP should document itself in the source */
-/* {{{ proto string confirm_eventlog_compiled(string arg)
-   Return a string to confirm that the module is compiled in */
-PHP_FUNCTION(confirm_eventlog_compiled)
-{
-	char *arg = NULL;
-	size_t arg_len, len;
-	zend_string *strg;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s", &arg, &arg_len) == FAILURE) {
-		return;
-	}
-
-	strg = strpprintf(0, "Congratulations! You have successfully modified ext/%.78s/config.m4. Module %.78s is now compiled into PHP.", "eventlog", arg);
-
-	RETURN_STR(strg);
-}
 /* }}} */
-/* The previous line is meant for vim and emacs, so it can correctly fold and
-   unfold functions in source code. See the corresponding marks just before
-   function definition, where the functions purpose is also documented. Please
-   follow this convention for the convenience of others editing your code.
-*/
-
 
 /* {{{ php_eventlog_init_globals
  */
-/* Uncomment this function if you have INI entries
+
 static void php_eventlog_init_globals(zend_eventlog_globals *eventlog_globals)
 {
-	eventlog_globals->global_value = 0;
-	eventlog_globals->global_string = NULL;
 }
-*/
 /* }}} */
 
 /* {{{ PHP_MINIT_FUNCTION
  */
 PHP_MINIT_FUNCTION(eventlog)
 {
-	/* If you have INI entries, uncomment these lines
-	REGISTER_INI_ENTRIES();
-	*/
+	//REGISTER_INI_ENTRIES();
+    zend_class_entry eventlog;
+    ZEND_INIT_MODULE_GLOBALS(eventlog, php_eventlog_init_globals, NULL);
+    INIT_CLASS_ENTRY(eventlog, EVENTLOG_CLASS_NAME, eventlog_methods);
+    eventlog_ce = zend_register_internal_class_ex(&eventlog, NULL, NULL TSRMLS_CC);
+    eventlog_ce->ce_flags = ZEND_ACC_IMPLICIT_PUBLIC;
 	return SUCCESS;
 }
 /* }}} */
@@ -99,9 +125,7 @@ PHP_MINIT_FUNCTION(eventlog)
  */
 PHP_MSHUTDOWN_FUNCTION(eventlog)
 {
-	/* uncomment this line if you have INI entries
-	UNREGISTER_INI_ENTRIES();
-	*/
+	//UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
 }
 /* }}} */
@@ -132,7 +156,9 @@ PHP_RSHUTDOWN_FUNCTION(eventlog)
 PHP_MINFO_FUNCTION(eventlog)
 {
 	php_info_print_table_start();
-	php_info_print_table_header(2, "eventlog support", "enabled");
+	php_info_print_table_header(2, "Eventlog support", "enabled");
+    php_info_print_table_header(2, "Version", EVENTLOG_VERSION);
+    php_info_print_table_header(2, "Author", EVENTLOG_AUTHOR);
 	php_info_print_table_end();
 
 	/* Remove comments if you have entries in php.ini
@@ -140,39 +166,6 @@ PHP_MINFO_FUNCTION(eventlog)
 	*/
 }
 /* }}} */
-
-/* {{{ eventlog_functions[]
- *
- * Every user visible function must have an entry in eventlog_functions[].
- */
-const zend_function_entry eventlog_functions[] = {
-	PHP_FE(confirm_eventlog_compiled,	NULL)		/* For testing, remove later. */
-	PHP_FE_END	/* Must be the last line in eventlog_functions[] */
-};
-/* }}} */
-
-/* {{{ eventlog_module_entry
- */
-zend_module_entry eventlog_module_entry = {
-	STANDARD_MODULE_HEADER,
-	"eventlog",
-	eventlog_functions,
-	PHP_MINIT(eventlog),
-	PHP_MSHUTDOWN(eventlog),
-	PHP_RINIT(eventlog),		/* Replace with NULL if there's nothing to do at request start */
-	PHP_RSHUTDOWN(eventlog),	/* Replace with NULL if there's nothing to do at request end */
-	PHP_MINFO(eventlog),
-	PHP_EVENTLOG_VERSION,
-	STANDARD_MODULE_PROPERTIES
-};
-/* }}} */
-
-#ifdef COMPILE_DL_EVENTLOG
-#ifdef ZTS
-ZEND_TSRMLS_CACHE_DEFINE();
-#endif
-ZEND_GET_MODULE(eventlog)
-#endif
 
 /*
  * Local variables:
@@ -182,3 +175,64 @@ ZEND_GET_MODULE(eventlog)
  * vim600: noet sw=4 ts=4 fdm=marker
  * vim<600: noet sw=4 ts=4
  */
+
+PHP_FUNCTION(eventlog_get_version) {
+    char * str;
+    int len = 0;
+    len = spprintf(&str, 0, "%s", EVENTLOG_VERSION);
+    RETURN_STRINGL(str, len, 0);
+}
+
+PHP_FUNCTION(eventlog_get_author) {
+    char * str;
+    int len = 0;
+    len = spprintf(&str, 0, "%s", EVENTLOG_AUTHOR);
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, __construct) {
+    return;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, __destruct) {
+    return;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, setpath) {
+    int argc = ZEND_NUM_ARGS();
+    char *path;
+    int path_len;
+    if(zend_parse_parameters(argc TSRMLS_CC, "S", &path, &path_len) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    if(argc > 0) {
+        EVENTLOG_G(default_path) = pemalloc(path_len + 1, 1);
+        memcpy(EVENTLOG_G(default_path), path, path_len + 1);
+        RETURN_TRUE;
+    }
+
+    RETURN_FALSE;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, getpath) {
+    char * str;
+    int len;
+    len = spprintf(&str, 0, "%s", EVENTLOG_G(default_path));
+    RETURN_STRINGL(str, len, 0);
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV) {
+    RETURN_FALSE;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV) {
+    RETURN_FALSE;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT) {
+    RETURN_FALSE;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL) {
+    RETURN_FALSE;
+}

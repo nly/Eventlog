@@ -38,9 +38,18 @@ extern zend_module_entry eventlog_module_entry;
 #include "TSRM.h"
 #endif
 
+#ifdef ZTS
+#define EVENTLOG_G(v) ZEND_TSRMG(eventlog_globals_id, zend_eventlog_globals *, v)
+#ifdef COMPILE_DL_EVENTLOG
+ZEND_TSRMLS_CACHE_EXTERN();
+#endif
+#else
+#define EVENTLOG_G(v) (eventlog_globals.v)
+#endif
+
 #define EVENTLOG_CLASS_NAME       "Eventlog"
-#define EVENTLOG_VERSION        "0.1"
-#define EVENTLOG_AUTHOE         "leandre.china@gmail.com"
+#define EVENTLOG_VERSION          "0.1"
+#define EVENTLOG_AUTHOR           "leandre.china@gmail.com"
 
 #define EVENTLOG_GETPV          "getpv"
 #define EVENTLOG_GETUV          "getuv"
@@ -48,9 +57,10 @@ extern zend_module_entry eventlog_module_entry;
 #define EVENTLOG_ANALYZE_DETAIL "analyze_detail"
 
 PHP_MINIT_FUNCTION(eventlog);
-PHP_RINIT_FUNTION(eventlog);
+PHP_RINIT_FUNCTION(eventlog);
 PHP_RSHUTDOWN_FUNCTION(eventlog);
 PHP_MSHUTDOWN_FUNCTION(eventlog);
+PHP_MINFO_FUNCTION(eventlog);
 
 PHP_FUNCTION(eventlog_get_version);
 PHP_FUNCTION(eventlog_get_author);
@@ -67,21 +77,12 @@ PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT);
 PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL);
 
 ZEND_BEGIN_MODULE_GLOABLES(eventlog)
-    char * default_path;
-    char * path;
+    char *default_path;
 ZEND_END_MODULE_GLOABLES(eventlog)
 
-#ifdef ZTS
-#define EVENTLOG_G(v) ZEND_TSRMG(eventlog_globals_id, zend_eventlog_globals *, v)
-#ifdef COMPILE_DL_EVENTLOG
-ZEND_TSRMLS_CACHE_EXTERN();
-#endif
-#else
-#define EVENTLOG_G(v) (eventlog_globals.v)
-#endif
+extern ZEND_DECLARE_MODULE_GLOBALS(eventlog);
 
 #endif	/* PHP_EVENTLOG_H */
-
 
 /*
  * Local variables:
