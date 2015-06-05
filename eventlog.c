@@ -54,13 +54,15 @@ const zend_function_entry eventlog_methods[] = {
     PHP_ME(EVENTLOG_CLASS_NAME, __construct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
     PHP_ME(EVENTLOG_CLASS_NAME, __destruct, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
 
-    PHP_ME(EVENTLOG_CLASS_NAME, setpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
-    PHP_ME(EVENTLOG_CLASS_NAME, getpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, setpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, getpath, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, setlogger, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, getlogger, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 
     PHP_FE_END
 };
@@ -76,7 +78,7 @@ zend_module_entry eventlog_module_entry = {
     PHP_RINIT(eventlog),        /* Replace with NULL if there's nothing to do at request start */
     PHP_RSHUTDOWN(eventlog),    /* Replace with NULL if there's nothing to do at request end */
     PHP_MINFO(eventlog),
-    PHP_EVENTLOG_VERSION,
+    EVENTLOG_VERSION,
     STANDARD_MODULE_PROPERTIES
 };
 /* }}} */
@@ -90,11 +92,12 @@ ZEND_GET_MODULE(eventlog)
 
 /* {{{ PHP_INI
  */
-/**
+
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("eventlog.default_path", "", PHP_INI_ALL, OnUpdateString, default_path, zend_eventlog_globals, eventlog_globals)
+    STD_PHP_INI_ENTRY("eventlog.base_path", "/log/", PHP_INI_ALL, OnUpdateString, base_path, zend_eventlog_globals, eventlog_globals)
+    STD_PHP_INI_ENTRY("eventlog.logger", "default", PHP_INI_ALL, OnUpdateString, logger, zend_eventlog_globals, eventlog_globals)
 PHP_INI_END()
-*/
+
 /* }}} */
 
 /* }}} */
@@ -111,9 +114,12 @@ static void php_eventlog_init_globals(zend_eventlog_globals *eventlog_globals)
  */
 PHP_MINIT_FUNCTION(eventlog)
 {
-	//REGISTER_INI_ENTRIES();
+	REGISTER_INI_ENTRIES();
     zend_class_entry eventlog;
     ZEND_INIT_MODULE_GLOBALS(eventlog, php_eventlog_init_globals, NULL);
+
+    REGISTER_STRINGL_CONSTANT("EVENTLOG_VERSION", EVENTLOG_VERSION, sizeof(EVENTLOG_VERSION) - 1, CONST_PERSISTENT | CONST_CS);
+
     INIT_CLASS_ENTRY(eventlog, EVENTLOG_CLASS_NAME, eventlog_methods);
     eventlog_ce = zend_register_internal_class_ex(&eventlog, NULL, NULL TSRMLS_CC);
     eventlog_ce->ce_flags = ZEND_ACC_IMPLICIT_PUBLIC;
@@ -125,7 +131,7 @@ PHP_MINIT_FUNCTION(eventlog)
  */
 PHP_MSHUTDOWN_FUNCTION(eventlog)
 {
-	//UNREGISTER_INI_ENTRIES();
+	UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
 }
 /* }}} */
@@ -187,6 +193,7 @@ PHP_FUNCTION(eventlog_get_author) {
     char * str;
     int len = 0;
     len = spprintf(&str, 0, "%s", EVENTLOG_AUTHOR);
+    RETURN_STRINGL(str, len, 0);
 }
 
 PHP_METHOD(EVENTLOG_CLASS_NAME, __construct) {
@@ -201,13 +208,13 @@ PHP_METHOD(EVENTLOG_CLASS_NAME, setpath) {
     int argc = ZEND_NUM_ARGS();
     char *path;
     int path_len;
-    if(zend_parse_parameters(argc TSRMLS_CC, "S", &path, &path_len) == FAILURE) {
+    if(zend_parse_parameters(argc TSRMLS_CC, "s", &path, &path_len) == FAILURE) {
         RETURN_FALSE;
     }
 
     if(argc > 0) {
-        EVENTLOG_G(default_path) = pemalloc(path_len + 1, 1);
-        memcpy(EVENTLOG_G(default_path), path, path_len + 1);
+        EVENTLOG_G(base_path) = pemalloc(path_len + 1, 1);
+        memcpy(EVENTLOG_G(base_path), path, path_len + 1);
         RETURN_TRUE;
     }
 
@@ -217,7 +224,31 @@ PHP_METHOD(EVENTLOG_CLASS_NAME, setpath) {
 PHP_METHOD(EVENTLOG_CLASS_NAME, getpath) {
     char * str;
     int len;
-    len = spprintf(&str, 0, "%s", EVENTLOG_G(default_path));
+    len = spprintf(&str, 0, "%s", EVENTLOG_G(base_path));
+    RETURN_STRINGL(str, len, 0);
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, setlogger) {
+    int argc = ZEND_NUM_ARGS();
+    char *path;
+    int path_len;
+    if(zend_parse_parameters(argc TSRMLS_CC, "s", &path, &path_len) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    if(argc > 0) {
+        EVENTLOG_G(logger) = pemalloc(path_len + 1, 1);
+        memcpy(EVENTLOG_G(logger), path, path_len + 1);
+        RETURN_TRUE;
+    }
+
+    RETURN_FALSE;
+}
+
+PHP_METHOD(EVENTLOG_CLASS_NAME, getlogger) {
+    char * str;
+    int len;
+    len = spprintf(&str, 0, "%s", EVENTLOG_G(logger));
     RETURN_STRINGL(str, len, 0);
 }
 
