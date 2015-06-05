@@ -31,11 +31,19 @@
 #include "ext/date/php_date.h"
 #include "zend_extensions.h"
 #include <stdlib.h>
+#include <unistd.h>
 
 ZEND_DECLARE_MODULE_GLOBALS(eventlog)
 
 /* True global resources - no need for thread safety here */
 static int le_eventlog;
+
+/**
+ * local functions define
+ */
+static long get_count(char *log_path, char *key_word, int ip_pos TSRMLS_DC);
+static int check_dir(char *log_dir TSRMLS_DC);
+static char * format(char *str TSRMLS_DC);
 
 /* {{{ eventlog_functions[]
  *
@@ -59,8 +67,8 @@ const zend_function_entry eventlog_methods[] = {
     PHP_ME(EVENTLOG_CLASS_NAME, setlogger, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
     PHP_ME(EVENTLOG_CLASS_NAME, getlogger, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
-    PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, getpv, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+    PHP_ME(EVENTLOG_CLASS_NAME, getuv, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
     PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
     PHP_ME(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
 
@@ -94,7 +102,7 @@ ZEND_GET_MODULE(eventlog)
  */
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("eventlog.base_path", "/log/", PHP_INI_ALL, OnUpdateString, base_path, zend_eventlog_globals, eventlog_globals)
+    STD_PHP_INI_ENTRY("eventlog.base_path", "/log", PHP_INI_ALL, OnUpdateString, base_path, zend_eventlog_globals, eventlog_globals)
     STD_PHP_INI_ENTRY("eventlog.logger", "default", PHP_INI_ALL, OnUpdateString, logger, zend_eventlog_globals, eventlog_globals)
 PHP_INI_END()
 
@@ -222,7 +230,7 @@ PHP_METHOD(EVENTLOG_CLASS_NAME, setpath) {
 }
 
 PHP_METHOD(EVENTLOG_CLASS_NAME, getpath) {
-    char * str;
+    char *str;
     int len;
     len = spprintf(&str, 0, "%s", EVENTLOG_G(base_path));
     RETURN_STRINGL(str, len, 0);
@@ -246,24 +254,118 @@ PHP_METHOD(EVENTLOG_CLASS_NAME, setlogger) {
 }
 
 PHP_METHOD(EVENTLOG_CLASS_NAME, getlogger) {
-    char * str;
+    char *str;
     int len;
     len = spprintf(&str, 0, "%s", EVENTLOG_G(logger));
     RETURN_STRINGL(str, len, 0);
 }
 
-PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETPV) {
-    RETURN_FALSE;
+PHP_METHOD(EVENTLOG_CLASS_NAME, getpv) {
+    int argc = ZEND_NUM_ARGS();
+    char *log_path = "", *key_word = "", *log_dir;
+    int log_path_len, key_word_len;
+    long count;
+
+    if(zend_parse_parameters(argc TSRMLS_CC, "|ss", &log_path, &log_path_len, &key_word, &key_word_len) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    spprintf(&log_dir, 0, "%s/%s", EVENTLOG_G(base_path), EVENTLOG_G(logger));
+    if(check_dir(log_dir TSRMLS_CC) == 0) {
+        php_error_docref(NULL TSRMLS_CC, E_ERROR, "Log dir [%s] is not readable", log_dir);
+    }
+    efree(log_dir);
+
+    count = get_count(log_path, key_word, 0 TSRMLS_CC);
+    RETURN_LONG(count);
 }
 
-PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_GETUV) {
-    RETURN_FALSE;
+PHP_METHOD(EVENTLOG_CLASS_NAME, getuv) {
+    int argc = ZEND_NUM_ARGS();
+    char *log_path = "", *key_word = "", *log_dir;
+    int log_path_len, key_word_len;
+    long count, ip_pos = 1;
+
+    if(zend_parse_parameters(argc TSRMLS_CC, "|sls", &log_path, &log_path_len, &ip_pos, &key_word, &key_word_len) == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    spprintf(&log_dir, 0, "%s/%s", EVENTLOG_G(base_path), EVENTLOG_G(logger));
+    if(check_dir(log_dir TSRMLS_CC) == 0) {
+        php_error_docref(NULL TSRMLS_CC, E_ERROR, "Log dir [%s] is not readable", log_dir);
+    }
+    efree(log_dir);
+
+    count = get_count(log_path, key_word, ip_pos TSRMLS_CC);
+    RETURN_LONG(count);
 }
 
 PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_COUNT) {
+
     RETURN_FALSE;
 }
 
 PHP_METHOD(EVENTLOG_CLASS_NAME, EVENTLOG_ANALYZE_DETAIL) {
     RETURN_FALSE;
+}
+
+/**
+ * local functions
+ */
+static long get_count(char *log_path, char *key_word, int ip_pos TSRMLS_DC) {
+    FILE *fp;
+    char buffer[BUFSIZ];
+    char *path, *sh;
+    long count;
+    int is_dir;
+
+    spprintf(&path, 0, "%s/%s/%s*", EVENTLOG_G(base_path), EVENTLOG_G(logger), log_path);
+
+    if (key_word[0]) {
+        spprintf(&sh, 0, "more %s | grep '%s' -c", path, key_word);
+        if(ip_pos) {
+            spprintf(&sh, 0, "more %s | grep '%s' | awk '{print $%d}' | sort -n | uniq | wc -l", path, key_word, ip_pos);
+        }
+    } else {
+        spprintf(&sh, 0, "more %s | wc -l ", path);
+        if(ip_pos) {
+            spprintf(&sh, 0, "more %s | awk '{print $%d}' | sort -n | uniq | wc -l ", path, ip_pos);
+        }
+    }
+
+    fp = VCWD_POPEN(sh, "r");
+    if(!fp) {
+        php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to fork pipe [%s]", sh);
+    } else {
+        char *temp_p = fgets(buffer, sizeof(buffer), fp);
+        pclose(fp);
+    }
+
+    count = atoi(format(buffer TSRMLS_CC));
+
+    efree(path);
+    efree(sh);
+
+    return count;
+}
+
+/**
+ * check if the log dir can readable
+ * @param  log_dir
+ * @return boolean
+ */
+static int check_dir(char *log_dir TSRMLS_DC) {
+    return (access(log_dir, R_OK) == 0) ? 1 : 0;
+}
+
+/**
+ * format pipe result
+ * @param  str
+ * @return str
+ */
+static char * format(char *str TSRMLS_DC) {
+    int len;
+    len = strlen(str);
+    str[len - 1] = '\0';
+    return str;
 }
